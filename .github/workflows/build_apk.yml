@@ -1,149 +1,139 @@
-name: Mirac Ezan Vakti APK
+[app]
 
-on:
-  workflow_dispatch:
+# -------------------------------------------------
+# UYGULAMA BILGILERI
+# -------------------------------------------------
 
-jobs:
-  build_android:
-    name: Android APK Olustur
-    runs-on: ubuntu-24.04
+title = Miraç Ezan Vakti
 
-    steps:
-      - name: Projeyi indir
-        uses: actions/checkout@v4
+# Tam Android paket adı:
+# org.mustafayildiz.ezan
+package.name = ezan
+package.domain = org.mustafayildiz
 
-      - name: Java 17 kur
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
+# main.py dosyasının bulunduğu klasör
+source.dir = .
 
-      - name: Python 3.11 kur
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
 
-      - name: Linux paketlerini kur
-        run: |
-          sudo apt-get update
+# -------------------------------------------------
+# APK ICINE ALINACAK DOSYALAR
+# -------------------------------------------------
 
-          sudo apt-get install -y \
-            git \
-            zip \
-            unzip \
-            build-essential \
-            autoconf \
-            autoconf-archive \
-            automake \
-            autopoint \
-            gettext \
-            libtool \
-            libtool-bin \
-            libltdl-dev \
-            pkg-config \
-            cmake \
-            patch \
-            libffi-dev \
-            libssl-dev \
-            zlib1g-dev \
-            libncurses-dev \
-            libtinfo6
+source.include_exts = py,kv,png,jpg,jpeg,webp,json,atlas,txt,xml,java,wav,ogg,mp3,m4a,aac
 
-      - name: Autotools kontrolu
-        run: |
-          autoconf --version
-          automake --version
-          libtoolize --version
-          aclocal --version
+# Uygulamanın ihtiyaç duyduğu kaynak klasörleri
+source.include_patterns = assets/*,assets/**/*,android_src/*,android_src/**/*,android_res/*,android_res/**/*,ses_kutuphanesi/*,ses_kutuphanesi/**/*
 
-          echo "Libtool macro dosyalari:"
-          find /usr/share/aclocal -type f -name "*.m4" | grep -E "libtool|ltdl" || true
+# Derlemeye dahil edilmeyecek klasörler
+source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,.venv,venv,yedek,backup,eski_dosyalar
 
-          echo "LT_SYS_SYMBOL_USCORE aramasi:"
-          grep -R "LT_SYS_SYMBOL_USCORE" /usr/share/aclocal /usr/share/libtool 2>/dev/null || true
+# Derlemeye dahil edilmeyecek dosyalar
+source.exclude_patterns = *.pyc,*.pyo,*_oncesi.py,*_yedek.py,*_backup.py
 
-      - name: Buildozer kur
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install "cython==0.29.36"
-          python -m pip install buildozer
 
-      - name: Projeyi kontrol et
-        run: |
-          pwd
-          ls -la
+# -------------------------------------------------
+# SURUM
+# -------------------------------------------------
 
-          if [ ! -f main.py ]; then
-            echo "HATA: main.py bulunamadi."
-            exit 1
-          fi
+version = 1.0.0
 
-          if [ ! -f buildozer.spec ]; then
-            echo "HATA: buildozer.spec bulunamadi."
-            exit 1
-          fi
 
-          python -m py_compile main.py
+# -------------------------------------------------
+# PYTHON VE KIVY BAGIMLILIKLARI
+# -------------------------------------------------
 
-          echo "Assets dosyalari:"
-          find assets -maxdepth 2 -type f -print || true
+requirements = python3,kivy==2.3.1,plyer,pyjnius
 
-          echo "Android Java dosyalari:"
-          find android_src -type f -print || true
 
-          echo "Android kaynaklari:"
-          find android_res -type f -print || true
+# -------------------------------------------------
+# EKRAN AYARLARI
+# -------------------------------------------------
 
-      - name: Eski derleme kalintilarini temizle
-        run: |
-          rm -rf .buildozer
-          rm -rf bin
-          mkdir -p bin
+orientation = portrait
+fullscreen = 0
 
-      - name: APK olustur
-        id: build
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          yes | buildozer -v android debug 2>&1 | tee buildozer_full.log
 
-      - name: Derleme sonucunu goster
-        if: always()
-        run: |
-          echo "========== SON 300 SATIR =========="
-          tail -n 300 buildozer_full.log || true
+# -------------------------------------------------
+# UYGULAMA IKONU VE ACILIS EKRANI
+# -------------------------------------------------
 
-          echo "========== HATA SATIRLARI =========="
-          grep -i -n -E \
-            "error:|exception|failed|failure|traceback|not found|no such file|could not|cannot|undefined macro" \
-            buildozer_full.log | tail -n 200 || true
+icon.filename = %(source.dir)s/assets/mirac_vakti_icon.png
 
-      - name: Hata kaydini yukle
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Buildozer-Derleme-Kaydi
-          path: buildozer_full.log
-          if-no-files-found: warn
-          retention-days: 7
+presplash.filename = %(source.dir)s/assets/mirac_vakti_presplash.png
 
-      - name: Olusan paketleri bul
-        if: always()
-        run: |
-          find . -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+# Açılış ekranının arka plan rengi
+android.presplash_color = #044D54
 
-      - name: APK dosyasini yukle
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Mirac-Ezan-Vakti-APK
-          path: bin/*.apk
-          if-no-files-found: error
-          retention-days: 14
 
-      - name: Derleme basarisizsa hata ver
-        if: steps.build.outcome == 'failure'
-        run: |
-          echo "APK derlemesi basarisiz oldu."
-          echo "Buildozer-Derleme-Kaydi artifact dosyasini inceleyin."
-          exit 1
+# -------------------------------------------------
+# ANDROID IZINLERI
+# -------------------------------------------------
+
+android.permissions = INTERNET,POST_NOTIFICATIONS,VIBRATE,SCHEDULE_EXACT_ALARM,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE,RECEIVE_BOOT_COMPLETED
+
+
+# -------------------------------------------------
+# ANDROID API VE NDK
+# -------------------------------------------------
+
+# Google Play hedef API seviyesi
+android.api = 36
+
+# Python derlemesindeki preadv ve pwritev kullanımı nedeniyle
+# en az Android 7.0, API 24
+android.minapi = 24
+
+# Android NDK
+android.ndk = 27c
+
+
+# -------------------------------------------------
+# TELEFON MIMARILERI
+# -------------------------------------------------
+
+# Modern 64-bit ve eski 32-bit ARM telefon desteği
+android.archs = arm64-v8a,armeabi-v7a
+
+
+# -------------------------------------------------
+# ANDROID SDK AYARLARI
+# -------------------------------------------------
+
+android.accept_sdk_license = True
+
+android.enable_androidx = True
+
+
+# -------------------------------------------------
+# ANDROIDX JAVA BAGIMLILIGI
+# -------------------------------------------------
+
+# NotificationCompat kullanan Java sınıfları için
+android.gradle_dependencies = androidx.core:core:1.13.1
+
+
+# -------------------------------------------------
+# JAVA VE ANDROID XML KAYNAKLARI
+# -------------------------------------------------
+
+# Özel Android Java sınıfları
+android.add_src = android_src
+
+# Widget layout, drawable ve XML kaynakları
+android.add_resources = android_res
+
+
+# -------------------------------------------------
+# ANDROID LOGLARI
+# -------------------------------------------------
+
+android.logcat_filters = *:S python:D
+
+
+[buildozer]
+
+# Ayrıntılı derleme çıktısı
+log_level = 2
+
+# Root kullanıcı uyarısı
+warn_on_root = 1
