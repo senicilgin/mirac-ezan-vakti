@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-android:
+  build_android:
     name: Android APK Olustur
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Projeyi al
+      - name: Projeyi indir
         uses: actions/checkout@v4
 
       - name: Java 17 kur
@@ -18,12 +18,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Python kur
+      - name: Python 3.11 kur
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Linux bagimliliklarini kur
+      - name: Linux paketlerini kur
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -46,33 +46,22 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install buildozer cython
 
-      - name: Python kodunu kontrol et
+      - name: Projeyi kontrol et
         run: |
-          python -m py_compile main.py
-
-      - name: Proje dosyalarini kontrol et
-        run: |
-          echo "Ana klasor:"
+          pwd
           ls -la
-
-          echo "Assets klasoru:"
-          ls -la assets || true
-
-          echo "Android Java kaynaklari:"
-          find android_src -maxdepth 8 -type f || true
-
-          echo "Android kaynaklari:"
-          find android_res -maxdepth 8 -type f || true
+          test -f main.py
+          test -f buildozer.spec
+          python -m py_compile main.py
 
       - name: APK olustur
         run: |
           yes | buildozer -v android debug
 
-      - name: APK dosyasini listele
+      - name: Olusan dosyalari goster
         if: always()
         run: |
-          echo "Olusan dosyalar:"
-          find . -type f -name "*.apk" -o -name "*.aab" || true
+          find . -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
       - name: APK dosyasini yukle
         uses: actions/upload-artifact@v4
