@@ -1,139 +1,216 @@
-[app]
+name: Mirac Ezan Vakti APK
 
-# -------------------------------------------------
-# UYGULAMA BILGILERI
-# -------------------------------------------------
+on:
+  workflow_dispatch:
 
-title = Miraç Ezan Vakti
+jobs:
+  build_android:
+    name: Android APK Olustur
+    runs-on: ubuntu-24.04
 
-# Tam Android paket adı:
-# org.mustafayildiz.ezan
-package.name = ezan
-package.domain = org.mustafayildiz
+    steps:
+      - name: Projeyi indir
+        uses: actions/checkout@v4
 
-# main.py dosyasının bulunduğu klasör
-source.dir = .
+      - name: Java 17 kur
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
 
+      - name: Python 3.11 kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-# -------------------------------------------------
-# APK ICINE ALINACAK DOSYALAR
-# -------------------------------------------------
+      - name: Linux bagimliliklarini kur
+        shell: bash
+        run: |
+          sudo apt-get update
 
-source.include_exts = py,kv,png,jpg,jpeg,webp,json,atlas,txt,xml,java,wav,ogg,mp3,m4a,aac
+          sudo apt-get install -y \
+            git \
+            zip \
+            unzip \
+            build-essential \
+            autoconf \
+            autoconf-archive \
+            automake \
+            autopoint \
+            gettext \
+            libtool \
+            libtool-bin \
+            libltdl-dev \
+            pkg-config \
+            cmake \
+            patch \
+            libffi-dev \
+            libssl-dev \
+            zlib1g-dev \
+            libncurses-dev \
+            libtinfo6
 
-# Uygulamanın ihtiyaç duyduğu kaynak klasörleri
-source.include_patterns = assets/*,assets/**/*,android_src/*,android_src/**/*,android_res/*,android_res/**/*,ses_kutuphanesi/*,ses_kutuphanesi/**/*
+      - name: Buildozer ve Cython kur
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "cython==3.0.11"
+          python -m pip install --upgrade buildozer
 
-# Derlemeye dahil edilmeyecek klasörler
-source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,.venv,venv,yedek,backup,eski_dosyalar
+          echo "Kurulu surumler:"
+          python --version
+          cython --version
+          buildozer --version
 
-# Derlemeye dahil edilmeyecek dosyalar
-source.exclude_patterns = *.pyc,*.pyo,*_oncesi.py,*_yedek.py,*_backup.py
+      - name: Proje dosyalarini kontrol et
+        shell: bash
+        run: |
+          echo "Calisma klasoru:"
+          pwd
 
+          echo "Ana dosyalar:"
+          ls -la
 
-# -------------------------------------------------
-# SURUM
-# -------------------------------------------------
+          if [ ! -f "main.py" ]; then
+            echo "HATA: main.py depo kokunde bulunamadi."
+            exit 1
+          fi
 
-version = 1.0.0
+          if [ ! -f "buildozer.spec" ]; then
+            echo "HATA: buildozer.spec depo kokunde bulunamadi."
+            exit 1
+          fi
 
+          echo "Python kodu kontrol ediliyor:"
+          python -m py_compile main.py
 
-# -------------------------------------------------
-# PYTHON VE KIVY BAGIMLILIKLARI
-# -------------------------------------------------
+          echo "Assets dosyalari:"
+          find assets -maxdepth 2 -type f -print 2>/dev/null || true
 
-requirements = python3,kivy==2.3.1,plyer,pyjnius
+          echo "Android Java dosyalari:"
+          find android_src -type f -print 2>/dev/null || true
 
+          echo "Android XML kaynaklari:"
+          find android_res -type f -print 2>/dev/null || true
 
-# -------------------------------------------------
-# EKRAN AYARLARI
-# -------------------------------------------------
+      - name: Gerekli gorselleri kontrol et
+        shell: bash
+        run: |
+          test -f assets/mirac_vakti_icon.png || {
+            echo "HATA: assets/mirac_vakti_icon.png bulunamadi."
+            exit 1
+          }
 
-orientation = portrait
-fullscreen = 0
+          test -f assets/mirac_vakti_presplash.png || {
+            echo "HATA: assets/mirac_vakti_presplash.png bulunamadi."
+            exit 1
+          }
 
+          echo "Ikon ve acilis gorseli bulundu."
 
-# -------------------------------------------------
-# UYGULAMA IKONU VE ACILIS EKRANI
-# -------------------------------------------------
+      - name: Buildozer ayarlarini kontrol et
+        shell: bash
+        run: |
+          echo "Buildozer ayarlari:"
+          grep -E \
+            "^(title|package.name|package.domain|version|requirements|android.api|android.minapi|android.ndk|android.archs)" \
+            buildozer.spec || true
 
-icon.filename = %(source.dir)s/assets/mirac_vakti_icon.png
+          if grep -q "android.minapi = 23" buildozer.spec; then
+            echo "HATA: android.minapi degeri 24 olmalidir."
+            exit 1
+          fi
 
-presplash.filename = %(source.dir)s/assets/mirac_vakti_presplash.png
+          if grep -q "androidx.core:core" buildozer.spec &&
+             grep "^requirements" buildozer.spec |
+             grep -q "androidx.core"; then
+            echo "HATA: AndroidX, requirements satirinda olmamalidir."
+            exit 1
+          fi
 
-# Açılış ekranının arka plan rengi
-android.presplash_color = #044D54
+      - name: Eski derleme kalintilarini temizle
+        shell: bash
+        run: |
+          rm -rf .buildozer
+          rm -rf bin
+          mkdir -p bin
 
+      - name: APK olustur
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
 
-# -------------------------------------------------
-# ANDROID IZINLERI
-# -------------------------------------------------
+          buildozer -v android debug \
+            2>&1 |
+            tee buildozer_full.log
 
-android.permissions = INTERNET,POST_NOTIFICATIONS,VIBRATE,SCHEDULE_EXACT_ALARM,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,FOREGROUND_SERVICE,FOREGROUND_SERVICE_SPECIAL_USE,RECEIVE_BOOT_COMPLETED
+      - name: Derleme kaydini temizle
+        if: always()
+        shell: bash
+        run: |
+          if [ -f buildozer_full.log ]; then
+            sed -r \
+              's/\x1B\[[0-9;]*[mK]//g' \
+              buildozer_full.log \
+              > buildozer_temiz.log
+          else
+            echo "Buildozer log dosyasi olusmadi." \
+              > buildozer_temiz.log
+          fi
 
+      - name: Gercek hatayi goster
+        if: always()
+        shell: bash
+        run: |
+          echo "========== HATA SATIRLARI =========="
 
-# -------------------------------------------------
-# ANDROID API VE NDK
-# -------------------------------------------------
+          grep -i -n \
+            -B 15 \
+            -A 35 \
+            -E "fatal error:|error:|make: \*\*\*|traceback|build failed|command failed|exception|not found|no such file|cannot|could not|dependency.*not resolved|undefined macro" \
+            buildozer_temiz.log |
+            tail -n 600 || true
 
-# Google Play hedef API seviyesi
-android.api = 36
+          echo "========== LOGUN SON 400 SATIRI =========="
 
-# Python derlemesindeki preadv ve pwritev kullanımı nedeniyle
-# en az Android 7.0, API 24
-android.minapi = 24
+          tail -n 400 buildozer_temiz.log || true
 
-# Android NDK
-android.ndk = 27c
+      - name: Derleme kayitlarini yukle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Buildozer-Derleme-Kaydi
+          path: |
+            buildozer_full.log
+            buildozer_temiz.log
+          if-no-files-found: warn
+          retention-days: 7
 
+      - name: Olusan paketleri bul
+        if: always()
+        shell: bash
+        run: |
+          echo "APK ve AAB dosyalari:"
+          find . -type f \
+            \( -name "*.apk" -o -name "*.aab" \) \
+            -print || true
 
-# -------------------------------------------------
-# TELEFON MIMARILERI
-# -------------------------------------------------
+      - name: APK dosyasini yukle
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mirac-Ezan-Vakti-APK
+          path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
-# Modern 64-bit ve eski 32-bit ARM telefon desteği
-android.archs = arm64-v8a,armeabi-v7a
-
-
-# -------------------------------------------------
-# ANDROID SDK AYARLARI
-# -------------------------------------------------
-
-android.accept_sdk_license = True
-
-android.enable_androidx = True
-
-
-# -------------------------------------------------
-# ANDROIDX JAVA BAGIMLILIGI
-# -------------------------------------------------
-
-# NotificationCompat kullanan Java sınıfları için
-android.gradle_dependencies = androidx.core:core:1.13.1
-
-
-# -------------------------------------------------
-# JAVA VE ANDROID XML KAYNAKLARI
-# -------------------------------------------------
-
-# Özel Android Java sınıfları
-android.add_src = android_src
-
-# Widget layout, drawable ve XML kaynakları
-android.add_resources = android_res
-
-
-# -------------------------------------------------
-# ANDROID LOGLARI
-# -------------------------------------------------
-
-android.logcat_filters = *:S python:D
-
-
-[buildozer]
-
-# Ayrıntılı derleme çıktısı
-log_level = 2
-
-# Root kullanıcı uyarısı
-warn_on_root = 1
+      - name: Derleme basarisizsa islemi durdur
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "APK derlemesi basarisiz oldu."
+          echo "Gercek hatayi goster adimini inceleyin."
+          echo "Ayrica Buildozer-Derleme-Kaydi dosyasini indirebilirsiniz."
+          exit 1
