@@ -1,0 +1,28 @@
+name: Mirac Ezan Vakti APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Android APK Olustur
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Projeyi al
+        uses: actions/checkout@v4
+
+      - name: APK olustur
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: buildozer -v android debug
+          buildozer_version: stable
+          workdir: .
+
+      - name: APK dosyasini yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mirac-Ezan-Vakti-APK
+          path: ${{ steps.buildozer.outputs.filename }}
+          if-no-files-found: error
