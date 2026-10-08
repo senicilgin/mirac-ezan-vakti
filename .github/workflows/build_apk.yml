@@ -2,9 +2,6 @@ name: Mirac Ezan Vakti APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build_android:
@@ -15,13 +12,13 @@ jobs:
       - name: Projeyi indir
         uses: actions/checkout@v4
 
-      - name: Java kur
-        uses: actions/setup-java@v4
+      - name: Java 17 kur
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Python kur
+      - name: Python 3.11 kur
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -29,34 +26,124 @@ jobs:
       - name: Linux paketlerini kur
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev libncurses-dev libffi-dev libssl-dev build-essential cmake
+
+          sudo apt-get install -y \
+            git \
+            zip \
+            unzip \
+            build-essential \
+            autoconf \
+            autoconf-archive \
+            automake \
+            autopoint \
+            gettext \
+            libtool \
+            libtool-bin \
+            libltdl-dev \
+            pkg-config \
+            cmake \
+            patch \
+            libffi-dev \
+            libssl-dev \
+            zlib1g-dev \
+            libncurses-dev \
+            libtinfo6
+
+      - name: Autotools kontrolu
+        run: |
+          autoconf --version
+          automake --version
+          libtoolize --version
+          aclocal --version
+
+          echo "Libtool macro dosyalari:"
+          find /usr/share/aclocal -type f -name "*.m4" | grep -E "libtool|ltdl" || true
+
+          echo "LT_SYS_SYMBOL_USCORE aramasi:"
+          grep -R "LT_SYS_SYMBOL_USCORE" /usr/share/aclocal /usr/share/libtool 2>/dev/null || true
 
       - name: Buildozer kur
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install buildozer cython
+          python -m pip install "cython==0.29.36"
+          python -m pip install buildozer
 
       - name: Projeyi kontrol et
         run: |
           pwd
           ls -la
-          test -f main.py
-          test -f buildozer.spec
+
+          if [ ! -f main.py ]; then
+            echo "HATA: main.py bulunamadi."
+            exit 1
+          fi
+
+          if [ ! -f buildozer.spec ]; then
+            echo "HATA: buildozer.spec bulunamadi."
+            exit 1
+          fi
+
           python -m py_compile main.py
 
-      - name: APK olustur
-        run: |
-          yes | buildozer -v android debug
+          echo "Assets dosyalari:"
+          find assets -maxdepth 2 -type f -print || true
 
-      - name: Olusan dosyalari goster
+          echo "Android Java dosyalari:"
+          find android_src -type f -print || true
+
+          echo "Android kaynaklari:"
+          find android_res -type f -print || true
+
+      - name: Eski derleme kalintilarini temizle
+        run: |
+          rm -rf .buildozer
+          rm -rf bin
+          mkdir -p bin
+
+      - name: APK olustur
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          yes | buildozer -v android debug 2>&1 | tee buildozer_full.log
+
+      - name: Derleme sonucunu goster
+        if: always()
+        run: |
+          echo "========== SON 300 SATIR =========="
+          tail -n 300 buildozer_full.log || true
+
+          echo "========== HATA SATIRLARI =========="
+          grep -i -n -E \
+            "error:|exception|failed|failure|traceback|not found|no such file|could not|cannot|undefined macro" \
+            buildozer_full.log | tail -n 200 || true
+
+      - name: Hata kaydini yukle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Buildozer-Derleme-Kaydi
+          path: buildozer_full.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Olusan paketleri bul
         if: always()
         run: |
           find . -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
       - name: APK dosyasini yukle
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: Mirac-Ezan-Vakti-APK
           path: bin/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Derleme basarisizsa hata ver
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "APK derlemesi basarisiz oldu."
+          echo "Buildozer-Derleme-Kaydi artifact dosyasini inceleyin."
+          exit 1
