@@ -6,23 +6,79 @@ on:
 jobs:
   build-android:
     name: Android APK Olustur
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Projeyi al
         uses: actions/checkout@v4
 
-      - name: APK olustur
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
+      - name: Java 17 kur
+        uses: actions/setup-java@v4
         with:
-          command: buildozer -v android debug
-          buildozer_version: stable
-          workdir: .
+          distribution: temurin
+          java-version: "17"
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Linux bagimliliklarini kur
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            zip \
+            unzip \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            libncurses-dev \
+            libffi-dev \
+            libssl-dev \
+            build-essential \
+            cmake
+
+      - name: Buildozer kur
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install buildozer cython
+
+      - name: Python kodunu kontrol et
+        run: |
+          python -m py_compile main.py
+
+      - name: Proje dosyalarini kontrol et
+        run: |
+          echo "Ana klasor:"
+          ls -la
+
+          echo "Assets klasoru:"
+          ls -la assets || true
+
+          echo "Android Java kaynaklari:"
+          find android_src -maxdepth 8 -type f || true
+
+          echo "Android kaynaklari:"
+          find android_res -maxdepth 8 -type f || true
+
+      - name: APK olustur
+        run: |
+          yes | buildozer -v android debug
+
+      - name: APK dosyasini listele
+        if: always()
+        run: |
+          echo "Olusan dosyalar:"
+          find . -type f -name "*.apk" -o -name "*.aab" || true
 
       - name: APK dosyasini yukle
         uses: actions/upload-artifact@v4
         with:
           name: Mirac-Ezan-Vakti-APK
-          path: ${{ steps.buildozer.outputs.filename }}
-          if-no-files-found: error
+          path: bin/*.apk
+          if-no-files-found: *rror
+          retention-days: 14
+*
